@@ -8,6 +8,17 @@ BreachWeave 面向智能渗透测试场景的多 Agent 协作架构。
 bun run install && bun run web
 ```
 
+## CTF Web / Pwn Solver
+
+项目内置了两个面向授权 CTF / 靶场的专用 Solver：
+
+```bash
+bun run start solver --prompt ctf-web-solver "目标是 http://127.0.0.1:8080，自动获取并提交 flag"
+bun run start solver --prompt ctf-pwn-solver "附件在 ./challenge，远程 nc 127.0.0.1 31337，自动获取并提交 flag"
+```
+
+Web 控制台的 Challenge Planner 也会在可用 prompts 中看到这两个 Solver，并根据题目入口和描述优先选择更匹配的 Web 或 Pwn 路线。
+
 ## 竞赛成绩
 
 | 起始日期   | 结束日期   | 竞赛                                                                                                            | 赛段     | 获奖情况 | 排名    |

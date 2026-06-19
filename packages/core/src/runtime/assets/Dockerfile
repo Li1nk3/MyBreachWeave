@@ -38,6 +38,14 @@ RUN set -eux; \
         file \
         xxd \
         binutils \
+        gdb \
+        gdbserver \
+        checksec \
+        patchelf \
+        strace \
+        ltrace \
+        socat \
+        qemu-user \
         openssh-client \
         openssh-server \
         iproute2 \
@@ -104,6 +112,8 @@ RUN python -m pip install --break-system-packages --ignore-installed --no-cache-
         pyjwt \
         sympy \
         z3-solver \
+        ROPGadget \
+        ropper \
         impacket \
         certipy-ad \
         bloodhound \

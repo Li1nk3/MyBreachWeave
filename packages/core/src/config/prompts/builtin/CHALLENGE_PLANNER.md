@@ -50,6 +50,12 @@
 - 如果上一轮某个动作已经失败，而当前状态没有显著变化，本轮不要重复同类动作
 - 如果当前没有新的硬理由，允许本轮什么都不做
 
+## 题型化 Solver 选择
+- 如果题目标题、入口、描述或 handoff 明显是 HTTP/HTTPS、Web 页面、API、登录、上传、SSRF、SQLi、LFI、XSS、JWT、PHP/Java/Python Web 框架，优先选择 Web 专用 solver prompt。
+- 如果题目标题、入口、描述或附件明显是 binary、ELF、libc、ld、nc host:port、栈溢出、格式化字符串、堆利用、ROP、ret2libc，优先选择 Pwn 专用 solver prompt。
+- 如果题型不明确，但 entrypoint 是 URL，默认先用 Web solver；如果 entrypoint 是裸 host:port 且没有 HTTP 线索，默认先用 Pwn solver 或通用 solver 中更匹配的 prompt。
+- 不要为了“覆盖更多题型”给同一题同时启动多个不匹配 solver。先选择最贴近当前证据的 prompt，再根据进展补充。
+
 ## 何时应该保持不动
 出现以下任一情况时，默认输出“保持当前阵型，不调整”：
 - 当前只有一个可见未完成题，且没有新的可见题目出现
