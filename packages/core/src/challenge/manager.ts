@@ -1,15 +1,18 @@
 import { ChallengeApiClient } from "./api-client"
-import type { ChallengeApiChallenge, ChallengeApiHintData, ChallengeApiListData, ChallengeApiStartData, ChallengeApiSubmitData } from "./api-client"
+import type { ChallengeApiAttachment, ChallengeApiChallenge, ChallengeApiHintData, ChallengeApiListData, ChallengeApiStartData, ChallengeApiSubmitData } from "./api-client"
 import { createAgentSession, defineTool, SessionManager } from "@mariozechner/pi-coding-agent"
 import type { ResourceLoader, ToolDefinition } from "@mariozechner/pi-coding-agent"
 import type { ConfigManager } from "../config/index"
 import { join } from "path"
-import { CHALLENGE_ENV_CHALLENGE_ID } from "./env"
+import { cp, mkdir, readdir, stat } from "fs/promises"
+import { CHALLENGE_ENV_ATTACHMENTS_DIR, CHALLENGE_ENV_CHALLENGE_ID, CHALLENGE_ENV_CONTEXT_PATH } from "./env"
 import {
     appendChallengeAttemptLog,
     appendChallengeSubmissionLog,
+    challengeAttachmentsDir,
     listChallengeAttemptLogs,
     listChallengeSubmissionLogs,
+    type ChallengeAttachmentRecord,
     type ChallengeInfoRecord,
     type ChallengeRecord,
     type ChallengeAttemptLogRecord,
@@ -69,6 +72,8 @@ const CHALLENGE_STATE_PLACEHOLDER = "{{CHALLENGE_STATE}}"
 const AVAILABLE_SOLVER_PROMPTS_PLACEHOLDER = "{{AVAILABLE_SOLVER_PROMPTS}}"
 const USER_STRATEGY_PLACEHOLDER = "{{USER_STRATEGY}}"
 const PREVIOUS_PLANNER_ROUND_PLACEHOLDER = "{{PREVIOUS_PLANNER_ROUND}}"
+const CONTAINER_CHALLENGE_CONTEXT_PATH = "/root/workspace/challenge.json"
+const CONTAINER_CHALLENGE_ATTACHMENTS_DIR = "/root/workspace/attachments"
 
 export interface ChallengeListResult {
     remote: ChallengeApiListData
@@ -98,6 +103,12 @@ export interface ChallengeSubmissionMeta {
 
 interface LaunchSolverOptions {
     plannerHandoff?: string
+}
+
+interface PreparedChallengeWorkspace {
+    contextPath: string
+    attachmentsDir: string
+    attachmentFiles: string[]
 }
 
 function extractErrorMessage(error: unknown): string | undefined {
@@ -540,6 +551,7 @@ function mapApiChallengeToRecord(challenge: ChallengeApiChallenge): ChallengeRec
         instance_status: challenge.instance_status,
         entrypoint: challenge.entrypoint,
         flags: [],
+        attachments: normalizeApiAttachments(challenge.attachments),
     }
 }
 
@@ -557,7 +569,85 @@ function mapRecordToApiChallenge(challenge: ChallengeInfoRecord): ChallengeApiCh
         hint_viewed: challenge.hint_viewed,
         instance_status: challenge.instance_status,
         entrypoint: challenge.entrypoint,
+        attachments: challenge.attachments,
     }
+}
+
+function normalizeAttachmentName(value: unknown): string | undefined {
+    if (typeof value !== "string") return
+    const text = value.trim()
+    return text || undefined
+}
+
+function normalizeAttachmentNumber(value: unknown): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return
+    return Math.trunc(value)
+}
+
+function normalizeApiAttachments(value: ChallengeApiAttachment[] | null | undefined): ChallengeAttachmentRecord[] | undefined {
+    if (!Array.isArray(value)) return undefined
+    const items = value
+        .map((item): ChallengeAttachmentRecord | undefined => {
+            if (!item || typeof item !== "object") return
+            const name = normalizeAttachmentName(item.name) ?? normalizeAttachmentName(item.filename)
+            if (!name) return
+            return {
+                name,
+                filename: normalizeAttachmentName(item.filename),
+                url: normalizeAttachmentName(item.url),
+                local_path: normalizeAttachmentName(item.local_path),
+                content_type: normalizeAttachmentName(item.content_type),
+                size: normalizeAttachmentNumber(item.size),
+                sha256: normalizeAttachmentName(item.sha256),
+                description: normalizeAttachmentName(item.description),
+            }
+        })
+        .filter((item): item is ChallengeAttachmentRecord => Boolean(item))
+    return items.length > 0 ? items : undefined
+}
+
+function mergeChallengeAttachments(current: ChallengeAttachmentRecord[] | undefined, next: ChallengeAttachmentRecord[] | undefined): ChallengeAttachmentRecord[] | undefined {
+    if (!current || current.length === 0) return next
+    if (!next || next.length === 0) return current
+    const merged = new Map<string, ChallengeAttachmentRecord>()
+    for (const item of current) merged.set(item.name, item)
+    for (const item of next) {
+        const previous = merged.get(item.name)
+        merged.set(item.name, previous ? { ...previous, ...item } : item)
+    }
+    return [...merged.values()]
+}
+
+function sanitizeAttachmentFileName(value: string): string {
+    const normalized = value
+        .trim()
+        .replace(/[<>:"/\\|?*\x00-\x1f]+/g, "_")
+        .replace(/\s+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "")
+    return normalized || "attachment.bin"
+}
+
+async function listFilesIfDirectory(dir: string): Promise<string[]> {
+    try {
+        const entries = await readdir(dir, { withFileTypes: true })
+        return entries.filter((entry) => entry.isFile()).map((entry) => entry.name).sort()
+    } catch {
+        return []
+    }
+}
+
+async function pathIsFile(path: string): Promise<boolean> {
+    try {
+        return (await stat(path)).isFile()
+    } catch {
+        return false
+    }
+}
+
+function formatSolverAttachmentsSection(files: string[]): string {
+    if (files.length === 0) return "- 无"
+    return files.map((file) => `- ${CONTAINER_CHALLENGE_ATTACHMENTS_DIR}/${file}`).join("\n")
 }
 
 export class ChallengeManager {
@@ -925,6 +1015,7 @@ export class ChallengeManager {
                     hint_viewed: existing?.hint_viewed === true || next.hint_viewed,
                     flags: existing?.flags ?? next.flags,
                     hint_content: existing?.hint_content ?? next.hint_content,
+                    attachments: mergeChallengeAttachments(existing?.attachments, next.attachments),
                 },
                 source,
             )
@@ -1180,6 +1271,87 @@ export class ChallengeManager {
         return appendChallengeAttemptLog(rootDir, input)
     }
 
+    async downloadChallengeAttachments(challengeId: string): Promise<{ dir: string; files: string[]; attachments: ChallengeAttachmentRecord[] }> {
+        const { api, rootDir } = await this.getContext()
+        const id = requireText(challengeId, "challengeId")
+        const challenge = await this.readVisibleChallenge(id)
+        const attachments = challenge?.attachments ?? []
+        const dir = challengeAttachmentsDir(rootDir, id)
+        await mkdir(dir, { recursive: true })
+
+        for (const attachment of attachments) {
+            const expectedFileName = sanitizeAttachmentFileName(attachment.filename ?? attachment.name)
+            const expectedPath = join(dir, expectedFileName)
+            if (await pathIsFile(expectedPath)) continue
+
+            const downloaded = await api.downloadAttachment(id, attachment)
+            const fileName = sanitizeAttachmentFileName(downloaded.fileName || expectedFileName)
+            const destPath = join(dir, fileName)
+            if (await pathIsFile(destPath)) continue
+            await Bun.write(destPath, downloaded.bytes)
+        }
+
+        return {
+            dir,
+            files: await listFilesIfDirectory(dir),
+            attachments,
+        }
+    }
+
+    private async prepareChallengeWorkspace(challenge: ChallengeInfoRecord, solverId: string): Promise<PreparedChallengeWorkspace> {
+        const workspaceDir = solverWorkspaceDir(solverId)
+        const workspaceAttachmentsDir = join(workspaceDir, "attachments")
+        await mkdir(workspaceDir, { recursive: true })
+        await mkdir(workspaceAttachmentsDir, { recursive: true })
+
+        const downloaded = await this.downloadChallengeAttachments(challenge.id)
+        for (const file of downloaded.files) {
+            await cp(join(downloaded.dir, file), join(workspaceAttachmentsDir, file), { force: true })
+        }
+
+        const attachmentFiles = await listFilesIfDirectory(workspaceAttachmentsDir)
+        const context = {
+            challenge,
+            workspace: {
+                context_path: CONTAINER_CHALLENGE_CONTEXT_PATH,
+                attachments_dir: CONTAINER_CHALLENGE_ATTACHMENTS_DIR,
+                attachment_files: attachmentFiles.map((file) => ({
+                    name: file,
+                    path: `${CONTAINER_CHALLENGE_ATTACHMENTS_DIR}/${file}`,
+                })),
+            },
+        }
+        await Bun.write(join(workspaceDir, "challenge.json"), JSON.stringify(context, null, 2))
+        await Bun.write(
+            join(workspaceDir, "challenge.md"),
+            [
+                `# ${challenge.title}`,
+                "",
+                `- id: ${challenge.id}`,
+                `- difficulty: ${challenge.difficulty}`,
+                `- level: ${challenge.level}`,
+                `- flags: ${challenge.flag_got_count}/${challenge.flag_count}`,
+                `- context: ${CONTAINER_CHALLENGE_CONTEXT_PATH}`,
+                `- attachments: ${CONTAINER_CHALLENGE_ATTACHMENTS_DIR}`,
+                "",
+                "## Entrypoints",
+                challenge.entrypoint && challenge.entrypoint.length > 0 ? challenge.entrypoint.map((item) => `- ${item}`).join("\n") : "- 无",
+                "",
+                "## Attachment Files",
+                formatSolverAttachmentsSection(attachmentFiles),
+                "",
+                "## Description",
+                challenge.description || "无",
+            ].join("\n"),
+        )
+
+        return {
+            contextPath: CONTAINER_CHALLENGE_CONTEXT_PATH,
+            attachmentsDir: CONTAINER_CHALLENGE_ATTACHMENTS_DIR,
+            attachmentFiles,
+        }
+    }
+
     async listAttemptLogs(challengeId: string): Promise<ChallengeAttemptLogRecord[]> {
         const rootDir = await this.getRootDir()
         return listChallengeAttemptLogs(rootDir, challengeId)
@@ -1252,7 +1424,8 @@ export class ChallengeManager {
         }
 
         const solverId = crypto.randomUUID().slice(0, 8)
-        const task = await this.buildSolverTask(challenge, options)
+        const workspace = await this.prepareChallengeWorkspace(challenge, solverId)
+        const task = await this.buildSolverTask(challenge, options, workspace)
         try {
             await this.seedSolverBoardFromChallenge(solverId, challengeId)
         } catch (error) {
@@ -1261,7 +1434,16 @@ export class ChallengeManager {
                 solverId,
             })
         }
-        const solver = await this.runtime.launch(promptNameText, task, { [CHALLENGE_ENV_CHALLENGE_ID]: challengeId }, { solverId })
+        const solver = await this.runtime.launch(
+            promptNameText,
+            task,
+            {
+                [CHALLENGE_ENV_CHALLENGE_ID]: challengeId,
+                [CHALLENGE_ENV_CONTEXT_PATH]: workspace.contextPath,
+                [CHALLENGE_ENV_ATTACHMENTS_DIR]: workspace.attachmentsDir,
+            },
+            { solverId },
+        )
         await this.appendAttemptLog({
             challengeId,
             solverId: solver.id,
@@ -1619,15 +1801,18 @@ export class ChallengeManager {
         }
     }
 
-    private async buildSolverTask(challenge: ChallengeInfoRecord, options?: LaunchSolverOptions): Promise<string> {
-        if (!challenge.entrypoint || challenge.entrypoint.length === 0) {
-            throw new Error(`challenge ${challenge.id} is missing entrypoint`)
+    private async buildSolverTask(challenge: ChallengeInfoRecord, options?: LaunchSolverOptions, workspace?: PreparedChallengeWorkspace): Promise<string> {
+        const hasEntrypoint = Boolean(challenge.entrypoint && challenge.entrypoint.length > 0)
+        const attachmentFiles = workspace?.attachmentFiles ?? []
+        if (!hasEntrypoint && attachmentFiles.length === 0) {
+            throw new Error(`challenge ${challenge.id} is missing entrypoint and attachments`)
         }
         if (!Number.isFinite(challenge.flag_count) || challenge.flag_count <= 0) {
             throw new Error(`challenge ${challenge.id} is missing flag_count`)
         }
         const [memoryItems, ideaItems, submissionItems] = await Promise.all([this.listMemory(challenge.id), this.listIdeas(challenge.id), this.listSubmissionLogs(challenge.id)])
-        const entrypoint = challenge.entrypoint.map((item) => `- ${item}`).join("\n")
+        const entrypoint = hasEntrypoint ? challenge.entrypoint!.map((item) => `- ${item}`).join("\n") : "- 无"
+        const attachments = formatSolverAttachmentsSection(attachmentFiles)
         const hint = challenge.hint_content?.trim() || "无"
         const plannerHandoff = options?.plannerHandoff?.trim()
         return [
@@ -1651,6 +1836,8 @@ export class ChallengeManager {
             ``,
             `要求:`,
             `- 以当前题目为唯一目标推进,取得 flag 立马调用工具提交`,
+            `- 题目上下文已写入 ${CONTAINER_CHALLENGE_CONTEXT_PATH}，附件已放入 ${CONTAINER_CHALLENGE_ATTACHMENTS_DIR}`,
+            `- Web 题优先从目标入口开始；Pwn/附件题优先检查附件目录中的 binary、libc、Dockerfile、源码或说明文件`,
             `- 这题可能不止一个 flag；即使提交正确，也要看比赛 API 是否已经完成`,
             `- 优先基于现有提示、入口和题面推进，不要偏题`,
             `- 如果卡住了，可以适当尝试一些可能的攻击手段，但不要偏离题目太远`,
@@ -1666,6 +1853,15 @@ export class ChallengeManager {
             ``,
             `目标入口:`,
             entrypoint,
+            ``,
+            `附件目录:`,
+            CONTAINER_CHALLENGE_ATTACHMENTS_DIR,
+            ``,
+            `附件文件:`,
+            attachments,
+            ``,
+            `题目上下文文件:`,
+            CONTAINER_CHALLENGE_CONTEXT_PATH,
             ``,
             `题目描述:`,
             challenge.description || "无",

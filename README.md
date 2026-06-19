@@ -19,6 +19,23 @@ bun run start solver --prompt ctf-pwn-solver "附件在 ./challenge，远程 nc 
 
 Web 控制台的 Challenge Planner 也会在可用 prompts 中看到这两个 Solver，并根据题目入口和描述优先选择更匹配的 Web 或 Pwn 路线。
 
+### 比赛平台 API 接入
+
+Host 侧负责调用比赛平台 API，Solver 只通过题目上下文、附件目录和提交工具解题：
+
+- 题目信息：`GET /api/challenges`
+- 启动实例：`POST /api/start_challenge`
+- 停止实例：`POST /api/stop_challenge`
+- 查看提示：`POST /api/hint`
+- 提交 Flag：`POST /api/submit`
+- 下载附件：默认预留 `POST /api/download_attachment`，也支持题目信息里的附件 `url` 或本地 mock 的 `local_path`
+
+Solver 启动后会看到：
+
+- `/root/workspace/challenge.json` - 题目完整上下文
+- `/root/workspace/challenge.md` - 题目摘要
+- `/root/workspace/attachments/` - 已下载并复制到 workspace 的附件
+
 ## 竞赛成绩
 
 | 起始日期   | 结束日期   | 竞赛                                                                                                            | 赛段     | 获奖情况 | 排名    |

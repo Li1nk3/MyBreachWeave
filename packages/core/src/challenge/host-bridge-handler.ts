@@ -1,5 +1,5 @@
 import type { ChallengeManager } from "./manager"
-import { CHALLENGE_ENV_CHALLENGE_ID } from "./env"
+import { CHALLENGE_ENV_ATTACHMENTS_DIR, CHALLENGE_ENV_CHALLENGE_ID, CHALLENGE_ENV_CONTEXT_PATH } from "./env"
 import type { HostBridgeHandleContext, HostBridgeHandleResult, HostBridgeHandler, SolverInstance } from "../runtime/types"
 
 function getObjectValue(value: unknown): Record<string, unknown> {
@@ -188,7 +188,18 @@ async function handleChallengeAction(
             const challengeId = getRequiredChallengeId(getSolverEnvValue)
             const challenge = await challengeManager.getChallenge(challengeId)
             const isCompleted = await challengeManager.isChallengeCompleted(challengeId)
-            return { handled: true, data: { challenge_id: challengeId, challenge, is_completed: isCompleted } }
+            return {
+                handled: true,
+                data: {
+                    challenge_id: challengeId,
+                    challenge,
+                    is_completed: isCompleted,
+                    workspace: {
+                        context_path: getSolverEnvValue(CHALLENGE_ENV_CONTEXT_PATH),
+                        attachments_dir: getSolverEnvValue(CHALLENGE_ENV_ATTACHMENTS_DIR),
+                    },
+                },
+            }
         }
         case "challenge_get_hint": {
             const challengeId = getRequiredChallengeId(getSolverEnvValue)

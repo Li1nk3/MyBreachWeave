@@ -20,6 +20,18 @@ export interface ChallengeRecord {
     instance_status: string
     entrypoint: string[] | null
     flags?: string[]
+    attachments?: ChallengeAttachmentRecord[]
+}
+
+export interface ChallengeAttachmentRecord {
+    name: string
+    filename?: string
+    url?: string
+    local_path?: string
+    content_type?: string
+    size?: number
+    sha256?: string
+    description?: string
 }
 
 export interface ChallengeInfoRecord extends ChallengeRecord {
@@ -135,6 +147,10 @@ function submissionLogsDir(rootDir: string, challengeId: string): string {
     return join(challengeDir(rootDir, challengeId), "submissions")
 }
 
+export function challengeAttachmentsDir(rootDir: string, challengeId: string): string {
+    return join(challengeDir(rootDir, requireText(challengeId, "challengeId")), "attachments")
+}
+
 export function resolveChallengeDir(challengeDir?: string): string {
     const fromParam = challengeDir?.trim()
     if (fromParam) return fromParam
@@ -154,6 +170,7 @@ async function ensureChallengeDirs(rootDir: string, challengeId: string): Promis
     await mkdir(join(baseDir, "locks"), { recursive: true })
     await mkdir(attemptLogsDir(rootDir, id), { recursive: true })
     await mkdir(submissionLogsDir(rootDir, id), { recursive: true })
+    await mkdir(challengeAttachmentsDir(rootDir, id), { recursive: true })
 }
 
 function createLogId(prefix: string): string {

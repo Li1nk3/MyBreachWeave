@@ -12,6 +12,26 @@ const ChallengeHintParams = Type.Object({})
 
 type SubmitFlagInput = Static<typeof SubmitFlagParams>
 
+export const challengeGetStateTool = defineTool({
+    name: "challenge_get_state",
+    label: "Challenge Get State",
+    description: "Read current challenge state, including entrypoints, attachment metadata, and solver workspace paths.",
+    promptSnippet: "challenge_get_state: read current challenge metadata and workspace paths",
+    parameters: EmptyParams,
+    async execute() {
+        const details = await requestHostBridge<{
+            challenge_id: string
+            challenge?: unknown
+            is_completed: boolean
+            workspace?: { context_path?: string; attachments_dir?: string }
+        }>("challenge_get_state", {})
+        return {
+            content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+            details,
+        }
+    },
+})
+
 export const challengeSubmitFlagTool = defineTool({
     name: "challenge_submit_flag",
     label: "Challenge Submit Flag",
@@ -62,6 +82,7 @@ export const challengeGetHintTool = defineTool({
 })
 
 export const challengeTools = [
+    challengeGetStateTool,
     challengeGetHintTool,
     challengeSubmitFlagTool,
 ]

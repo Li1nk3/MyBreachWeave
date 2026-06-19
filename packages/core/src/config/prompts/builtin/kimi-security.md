@@ -9,6 +9,9 @@ tools:
     - "find"
     - "ls"
     - "security_kimi_search"
+    - "challenge_get_state"
+    - "challenge_get_hint"
+    - "challenge_submit_flag"
 skills:
     - "intranet-pentest"
     - "agent-browser"

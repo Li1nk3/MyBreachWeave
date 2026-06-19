@@ -17,6 +17,18 @@ export interface ChallengeApiChallenge {
     hint_viewed: boolean
     instance_status: string
     entrypoint: string[] | null
+    attachments?: ChallengeApiAttachment[] | null
+}
+
+export interface ChallengeApiAttachment {
+    name: string
+    filename?: string
+    url?: string
+    content_type?: string
+    size?: number
+    sha256?: string
+    description?: string
+    local_path?: string
 }
 
 export interface ChallengeApiListData {
@@ -40,6 +52,12 @@ export interface ChallengeApiHintData {
 
 export type ChallengeApiStartData = string[] | { already_completed: boolean }
 
+export interface ChallengeApiAttachmentDownload {
+    fileName: string
+    contentType?: string
+    bytes: Uint8Array
+}
+
 const CHALLENGE_API_MAX_REQUESTS_PER_SECOND = 3
 const CHALLENGE_API_REQUEST_INTERVAL_MS = Math.ceil(1000 / CHALLENGE_API_MAX_REQUESTS_PER_SECOND)
 const CHALLENGE_API_REQUEST_TIMEOUT_MS = 2_500
@@ -50,6 +68,7 @@ type ChallengeApiMockState = {
     stopChallenge: (code: string) => Promise<null>
     submitFlag: (code: string, flag: string) => Promise<ChallengeApiSubmitData>
     getHint: (code: string) => Promise<ChallengeApiHintData>
+    downloadAttachment?: (code: string, attachment: ChallengeApiAttachment) => Promise<ChallengeApiAttachmentDownload>
 }
 
 function requireText(value: string | undefined, fieldName: string): string {
@@ -73,6 +92,30 @@ function formatRequestError(error: unknown): string {
         return message || error.name
     }
     return String(error)
+}
+
+function parseContentDispositionFileName(value: string | null): string | undefined {
+    if (!value) return
+    const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i)
+    if (utf8Match?.[1]) {
+        try {
+            return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ""))
+        } catch {
+            return utf8Match[1].trim().replace(/^"|"$/g, "")
+        }
+    }
+    const match = value.match(/filename=([^;]+)/i)
+    return match?.[1]?.trim().replace(/^"|"$/g, "") || undefined
+}
+
+function basenameFromUrl(value: string): string | undefined {
+    try {
+        const url = new URL(value)
+        const part = url.pathname.split("/").filter(Boolean).pop()
+        return part ? decodeURIComponent(part) : undefined
+    } catch {
+        return
+    }
 }
 
 export class ChallengeApiClient {
@@ -134,6 +177,30 @@ export class ChallengeApiClient {
         })
     }
 
+    async downloadAttachment(code: string, attachment: ChallengeApiAttachment): Promise<ChallengeApiAttachmentDownload> {
+        return this.runLimited(async () => {
+            const challengeCode = requireText(code, "code")
+            const name = requireText(attachment.name || attachment.filename, "attachment.name")
+            if (this.mockState?.downloadAttachment) return this.mockState.downloadAttachment(challengeCode, attachment)
+
+            if (attachment.local_path?.trim()) {
+                const file = Bun.file(attachment.local_path.trim())
+                if (!(await file.exists())) throw new Error(`attachment local_path not found: ${attachment.local_path}`)
+                return {
+                    fileName: attachment.filename?.trim() || name,
+                    contentType: file.type || attachment.content_type,
+                    bytes: new Uint8Array(await file.arrayBuffer()),
+                }
+            }
+
+            if (attachment.url?.trim()) {
+                return this.requestBytes(attachment.url.trim(), "GET", undefined, attachment.filename?.trim() || name)
+            }
+
+            return this.requestBytes("/download_attachment", "POST", { code: challengeCode, name }, attachment.filename?.trim() || name)
+        })
+    }
+
     private async request<T>(path: string, method: "GET" | "POST", payload?: Record<string, unknown>): Promise<T> {
         const headers: Record<string, string> = {
             "Agent-Token": this.agentToken,
@@ -190,6 +257,58 @@ export class ChallengeApiClient {
             throw new Error(`challenge api ${method} ${path} failed: ${message}`)
         }
         return envelope.data
+    }
+
+    private async requestBytes(pathOrUrl: string, method: "GET" | "POST", payload?: Record<string, unknown>, fallbackFileName?: string): Promise<ChallengeApiAttachmentDownload> {
+        const headers: Record<string, string> = {
+            "Agent-Token": this.agentToken,
+        }
+        const requestInit: RequestInit = {
+            method,
+            headers,
+        }
+        if (payload) {
+            headers["Content-Type"] = "application/json"
+            requestInit.body = JSON.stringify(payload)
+        }
+
+        const controller = new AbortController()
+        const timeout = setTimeout(() => {
+            controller.abort()
+        }, CHALLENGE_API_REQUEST_TIMEOUT_MS)
+
+        const url = /^https?:\/\//i.test(pathOrUrl) ? pathOrUrl : `${this.baseUrl}${pathOrUrl}`
+        let response: Response
+        try {
+            response = await fetch(url, {
+                ...requestInit,
+                signal: controller.signal,
+            })
+        } catch (error) {
+            if (error instanceof Error && error.name === "AbortError") {
+                throw new Error(`challenge api ${method} ${pathOrUrl} timeout after ${CHALLENGE_API_REQUEST_TIMEOUT_MS}ms`)
+            }
+            throw new Error(`challenge api ${method} ${pathOrUrl} request failed: ${formatRequestError(error)}`)
+        } finally {
+            clearTimeout(timeout)
+        }
+
+        if (!response.ok) {
+            const message = (await response.text()).trim()
+            throw new Error(`challenge api ${method} ${pathOrUrl} failed: ${message || `HTTP ${response.status}`}`)
+        }
+
+        const fileName =
+            parseContentDispositionFileName(response.headers.get("Content-Disposition")) ??
+            fallbackFileName?.trim() ??
+            basenameFromUrl(pathOrUrl) ??
+            "attachment.bin"
+        const contentType = response.headers.get("Content-Type") ?? undefined
+        return {
+            fileName,
+            contentType,
+            bytes: new Uint8Array(await response.arrayBuffer()),
+        }
     }
 
     private async runLimited<T>(run: () => Promise<T>): Promise<T> {

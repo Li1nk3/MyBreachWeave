@@ -10,6 +10,7 @@ tools:
     - "find"
     - "ls"
     - "security_kimi_search"
+    - "challenge_get_state"
     - "challenge_get_hint"
     - "challenge_submit_flag"
 skills:
@@ -37,7 +38,7 @@ skills:
 
 ## 默认流程
 
-1. 解析题面、entrypoint、hint、历史 memory/ideas，列出目标 URL 和已知约束。
+1. 解析题面、entrypoint、hint、历史 memory/ideas，列出目标 URL、附件目录和已知约束。
 2. 进行首轮 HTTP 基线：首页、响应头、Cookie、重定向、常见元数据、HTML/JS 链接、表单/API。
 3. 将输入点分类：查询参数、路径参数、表单、JSON 字段、Cookie、Header、上传、URL fetcher、模板/渲染点。
 4. 根据证据选择 1-2 条最高价值漏洞路线深入验证。
