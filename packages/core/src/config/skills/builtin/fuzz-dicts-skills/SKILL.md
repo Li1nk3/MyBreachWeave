@@ -1,6 +1,6 @@
 ---
 name: fuzz-dicts-navigator
-description: Navigate the fuzzDicts repository and choose the right dictionary or payload list for authorized Web directory scanning, parameter fuzzing, upload bypass testing, subdomain enumeration, API discovery, credential spraying, and vuln-specific fuzzing. Use this skill whenever the user asks which wordlist to use, wants to browse or classify fuzz dictionaries, needs ffuf/wfuzz/feroxbuster/dirsearch/gobuster-ready file paths, or mentions this repository even if they do not explicitly ask for a skill.
+description: Navigate the fuzzDicts repository and choose the right dictionary or payload list for CTF Web path discovery, parameter fuzzing, upload bypass testing, API discovery, and vuln-specific fuzzing. Use this skill whenever the solver needs a focused wordlist, wants to browse or classify fuzz dictionaries, needs ffuf/wfuzz/feroxbuster/dirsearch/gobuster-ready file paths, or mentions this repository.
 ---
 
 # Fuzz Dicts Navigator
@@ -9,7 +9,7 @@ Use this skill to turn the `fuzzDicts` repository into a practical navigation la
 
 The repository already contains many useful dictionaries, but the folder names alone do not help much during a live test. Your job is to quickly map the user's task to the smallest useful set of files, explain why those files fit, and give tool-ready examples.
 
-This skill is for authorized security testing, internal validation, lab work, and CTF-style practice. If the user's context is unclear, keep guidance focused on defensive or authorized use.
+This skill is for CTF challenges, local labs, and other explicitly authorized practice targets. If the scope is unclear, keep guidance focused on lab-safe use.
 
 ## What to do
 
@@ -26,8 +26,6 @@ Route the request into one of these buckets before recommending anything:
 - Directory or content discovery
 - Parameter discovery
 - File upload bypass or extension fuzzing
-- Username or password guessing for authorized testing
-- Subdomain enumeration
 - API path discovery
 - JavaScript file discovery
 - Vulnerability-specific payload selection: XSS, SQLi, SSRF, LFI, XXE, RCE

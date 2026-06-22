@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { existsSync } from "node:fs"
 import { mkdir, readdir, stat } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
 import type { Message } from "@mariozechner/pi-ai"
@@ -11,6 +12,8 @@ const DOCKERFILE_HASH_LABEL = "ai.tch-agent.dockerfile-sha256"
 const RUNTIME_IMAGE_ARCH = "amd64"
 const RUNTIME_DIR = resolve(TCH_AGENT_HOME_DIR, "runtime")
 const RUNTIME_SELF_DIR = resolve(RUNTIME_DIR, "self")
+const SOURCE_RUNTIME_MOUNT = "/opt/tch-agent/source"
+const SOURCE_RUNNER_MOUNT = "/opt/tch-agent/solver-rpc.ts"
 const GENERATED_RUNTIME_PACKAGE_JSON = {
     name: "tch-agent-runtime",
     version: "0.0.1",
@@ -19,6 +22,10 @@ const GENERATED_RUNTIME_PACKAGE_JSON = {
 }
 
 export { DOCKERFILE_HASH_LABEL, RUNTIME_IMAGE_ARCH }
+
+async function writeFileFromPath(destPath: string, sourcePath: string): Promise<void> {
+    await Bun.write(destPath, await Bun.file(sourcePath).arrayBuffer())
+}
 
 export function hashDockerfileContent(content: string): string {
     return createHash("sha256").update(content).digest("hex")
@@ -142,12 +149,55 @@ export async function ensureSolverBinary(): Promise<string> {
     return binPath
 }
 
+async function ensureSourceSolverRunner(): Promise<{ projectRoot: string; runnerPath: string }> {
+    const binDir = RUNTIME_SELF_DIR
+    const runnerPath = resolve(binDir, "solver-rpc.ts")
+    const projectRoot = resolve(import.meta.dir, "../../../..")
+    await mkdir(binDir, { recursive: true })
+    const runnerContent = [
+            `import { runSolverRpc, runSubagentCli } from "${SOURCE_RUNTIME_MOUNT}/packages/core/src/index.ts"`,
+            "",
+            "function parseSubagentArgs(argv: string[]): { promptName: string; task: string } {",
+            "    let promptName = ''",
+            "    const taskParts: string[] = []",
+            "    for (let i = 0; i < argv.length; i += 1) {",
+            "        const arg = argv[i]",
+            "        if ((arg === '--prompt' || arg === '-p') && argv[i + 1]) {",
+            "            promptName = argv[i + 1]",
+            "            i += 1",
+            "            continue",
+            "        }",
+            "        taskParts.push(arg)",
+            "    }",
+            "    const task = taskParts.join(' ').trim()",
+            "    if (!promptName || !task) throw new Error('subagent requires --prompt <name> <task>')",
+            "    return { promptName, task }",
+            "}",
+            "",
+            "if (process.argv[2] === 'subagent') {",
+            "    const { promptName, task } = parseSubagentArgs(process.argv.slice(3))",
+            "    await runSubagentCli({ promptName, task })",
+            "    process.exit(0)",
+            "}",
+            "",
+            "await runSolverRpc({ env: [] })",
+            "",
+        ].join("\n")
+    try {
+        await Bun.write(runnerPath, runnerContent)
+    } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "EPERM") return { projectRoot, runnerPath }
+        throw error
+    }
+    return { projectRoot, runnerPath }
+}
+
 async function ensureEmbeddedLinuxSolverBinary(): Promise<string> {
     const binDir = RUNTIME_SELF_DIR
     const binPath = resolve(binDir, "tch-agent-linux-x64")
     await mkdir(binDir, { recursive: true })
     const embedded = await import("./assets/tch-agent-linux-x64", { with: { type: "file" } })
-    await Bun.write(binPath, Bun.file(embedded.default))
+    await writeFileFromPath(binPath, embedded.default)
     await Bun.write(resolve(binDir, "package.json"), JSON.stringify(GENERATED_RUNTIME_PACKAGE_JSON, null, 2))
     return binPath
 }
@@ -156,7 +206,13 @@ async function ensureRuntimePackageManifest(): Promise<string> {
     const binDir = RUNTIME_SELF_DIR
     const path = resolve(binDir, "package.json")
     await mkdir(binDir, { recursive: true })
-    await Bun.write(path, JSON.stringify(GENERATED_RUNTIME_PACKAGE_JSON, null, 2))
+    if (existsSync(path)) return path
+    try {
+        await Bun.write(path, JSON.stringify(GENERATED_RUNTIME_PACKAGE_JSON, null, 2))
+    } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "EPERM") return path
+        throw error
+    }
     return path
 }
 
@@ -164,17 +220,17 @@ export async function resolveSolverInjection(): Promise<{ binds: string[]; cmd: 
     const execPath = process.execPath
     const bunRuntime = isBunRuntime()
 
-    let binary: string
     const packageJson = await ensureRuntimePackageManifest()
 
     if (bunRuntime) {
-        binary = await ensureSolverBinary()
-    } else if (process.platform === "linux" && process.arch === "x64") {
-        binary = execPath
-    } else {
-        binary = await ensureEmbeddedLinuxSolverBinary()
+        const source = await ensureSourceSolverRunner()
+        return {
+            binds: [`${source.projectRoot}:${SOURCE_RUNTIME_MOUNT}:ro`, `${source.runnerPath}:${SOURCE_RUNNER_MOUNT}:ro`, `${packageJson}:/opt/tch-agent/package.json:ro`],
+            cmd: ["bun", SOURCE_RUNNER_MOUNT],
+        }
     }
 
+    const binary = process.platform === "linux" && process.arch === "x64" ? execPath : await ensureEmbeddedLinuxSolverBinary()
     return {
         binds: [`${binary}:/opt/tch-agent/tch-agent:ro`, `${packageJson}:/opt/tch-agent/package.json:ro`],
         cmd: ["/opt/tch-agent/tch-agent", "solver", "rpc"],
@@ -191,7 +247,7 @@ export async function resolveDockerfilePath(onProgress?: (message: string) => vo
     for (const [relativePath, sourcePath] of Object.entries(RUNTIME_ASSET_FILES)) {
         const targetPath = resolve(RUNTIME_DIR, relativePath)
         await mkdir(dirname(targetPath), { recursive: true })
-        await Bun.write(targetPath, Bun.file(sourcePath))
+        await writeFileFromPath(targetPath, sourcePath)
     }
     onProgress?.(`Synced runtime assets to ${RUNTIME_DIR}`)
 

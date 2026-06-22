@@ -47,7 +47,7 @@ import {
 } from "./memory"
 import type { RuntimeManager } from "../runtime/runtime"
 import type { SolverInstance } from "../runtime/types"
-import { solverSessionDir } from "../runtime/types"
+import { solverSessionDir, solverWorkspaceDir } from "../runtime/types"
 import { seedSolverBoardSnapshot } from "../solver/board-store"
 import { Type } from "@sinclair/typebox"
 import { CHALLENGE_PLANNER_PROMPT_NAME } from "../config/prompts/index"

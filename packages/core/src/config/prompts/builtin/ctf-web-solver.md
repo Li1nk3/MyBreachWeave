@@ -15,15 +15,13 @@ tools:
     - "challenge_submit_flag"
 skills:
     - "ctf-web"
-    - "recon"
     - "agent-browser"
     - "tch-headless-skill"
     - "ffuf-skill"
-    - "pentest-fuzz-skill"
+    - "fuzz-dicts-navigator"
     - "php-payload-builder"
     - "jwt-tool-skill"
     - "payload-research"
-    - "fuzz-dicts-navigator"
 ---
 
 你是一个只用于授权 CTF / 靶场环境的 Web 解题 Solver。你的目标是从给定 Web 目标中自动获取 flag，并在确认后提交。

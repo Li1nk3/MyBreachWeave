@@ -45,11 +45,6 @@ feroxbuster -u https://target.example -w directoryDicts/Filenames_or_Directories
 gobuster dir -u https://target.example -w directoryDicts/top7000.txt -x php,txt -k
 ```
 
-### Subdomain enumeration
-```bash
-gobuster dns -d example.com -w subdomainDicts/main.txt
-```
-
 ## wfuzz
 
 ### GET parameter fuzzing
@@ -85,4 +80,4 @@ filename=test.php5
 - Keep commands editable.
 - Do not overfit flags when the user did not specify their tooling.
 - If the user names a tool, prefer that tool.
-- If the user does not name a tool, default to `ffuf` for paths and parameters, `feroxbuster` for recursive content discovery, and `gobuster` for subdomains.
+- If the user does not name a tool, default to `ffuf` for paths and parameters, and `feroxbuster` for recursive content discovery.

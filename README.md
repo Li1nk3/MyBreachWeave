@@ -1,127 +1,179 @@
 # BreachWeave
 
-BreachWeave 面向智能渗透测试场景的多 Agent 协作架构。
+BreachWeave is a CTF-oriented multi-agent platform for Web and Pwn challenge practice.
 
-## 第一次启动
+The current fork focuses on local and authorized CTF workflows:
+
+- Challenge Manager: loads challenge metadata, attachments, hints, and submissions.
+- CTF Solver: launches model-driven solver containers for Web/Pwn tasks.
+- Observer and memory board: keeps reusable facts, attempts, submissions, and solver progress visible.
+- Docker runtime: runs solver work in a Linux CTF toolchain instead of polluting the host.
+
+The original pentest-oriented prompts and skills are no longer exposed by default. Reusable pieces such as browser automation, ffuf guidance, JWT tooling, PHP payload construction, and focused fuzz dictionaries are kept for CTF Web usage.
+
+## Status
+
+Implemented and tested locally:
+
+- Web UI and REST API.
+- Docker-based Linux solver runtime.
+- Built-in CTF prompts:
+  - `ctf-web-solver`
+  - `ctf-pwn-solver`
+- Mock challenge mode for local testing without a real contest API.
+- Local pwn smoke test using a simple ret2win ELF.
+
+Still expected to evolve:
+
+- Real contest API adapter details.
+- Fully unattended contest mode.
+- More challenge-type specific prompts and skills.
+
+## Requirements
+
+- Windows, Linux, or macOS host.
+- Bun 1.3.x.
+- Docker Desktop or a working Docker daemon.
+- A model provider compatible with the configured protocol, usually OpenAI Responses-compatible or Anthropic-compatible.
+
+Install dependencies:
 
 ```bash
-bun run install && bun run web
+bun install
 ```
 
-## CTF Web / Pwn Solver
-
-项目内置了两个面向授权 CTF / 靶场的专用 Solver：
+Start the Web UI:
 
 ```bash
-bun run start solver --prompt ctf-web-solver "目标是 http://127.0.0.1:8080，自动获取并提交 flag"
-bun run start solver --prompt ctf-pwn-solver "附件在 ./challenge，远程 nc 127.0.0.1 31337，自动获取并提交 flag"
+bun run web
 ```
 
-Web 控制台的 Challenge Planner 也会在可用 prompts 中看到这两个 Solver，并根据题目入口和描述优先选择更匹配的 Web 或 Pwn 路线。
+Open:
 
-### 比赛平台 API 接入
+```text
+http://127.0.0.1:3000
+```
 
-Host 侧负责调用比赛平台 API，Solver 只通过题目上下文、附件目录和提交工具解题：
+If port `3000` is busy, the server may choose another port and print it in the startup log.
 
-- 题目信息：`GET /api/challenges`
-- 启动实例：`POST /api/start_challenge`
-- 停止实例：`POST /api/stop_challenge`
-- 查看提示：`POST /api/hint`
-- 提交 Flag：`POST /api/submit`
-- 下载附件：默认预留 `POST /api/download_attachment`，也支持题目信息里的附件 `url` 或本地 mock 的 `local_path`
+## Model Setup
 
-Solver 启动后会看到：
+Configure models in the Web UI:
 
-- `/root/workspace/challenge.json` - 题目完整上下文
-- `/root/workspace/challenge.md` - 题目摘要
-- `/root/workspace/attachments/` - 已下载并复制到 workspace 的附件
+```text
+http://127.0.0.1:3000/#/config/providers
+http://127.0.0.1:3000/#/config/models
+```
 
-## 竞赛成绩
+Minimum setup:
 
-| 起始日期   | 结束日期   | 竞赛                                                                                                            | 赛段     | 获奖情况 | 排名    |
-| ---------- | ---------- | --------------------------------------------------------------------------------------------------------------- | -------- | -------- | ------- |
-| 2026-04-13 | 2026-04-17 | [腾讯云黑客松智能渗透测试挑战赛（第二期）](https://zc.tencent.com/competition/competitionHackathon?code=cha004) | 线上初赛 | N/A      | 1 / 613 |
-| 2026-04-25 | 2026-04-25 | [腾讯云黑客松智能渗透测试挑战赛（第二期）](https://zc.tencent.com/competition/competitionHackathon?code=cha004) | 线下决赛 | 一等奖   | 1 / 613 |
+1. Add a provider with protocol, base URL, and API key.
+2. Discover or manually add a model.
+3. Use the model test button to confirm it returns `OK`.
 
-<a href="https://zc.tencent.com/competition/competitionHackathon?code=cha004">
-    <img width="1604" height="460" alt="dc25eea9efae81999d4660a747aa0b9c" src="https://github.com/user-attachments/assets/2cda17c3-e668-4459-abc0-e46a745860be" />
-</a>
+Runtime config is stored under:
 
-![](./docs/design.png)
+```text
+~/.tch-agent/config/
+```
 
+Do not commit files from that directory. It may contain API keys.
 
-https://github.com/user-attachments/assets/b051927e-b64f-4bdf-833d-d542e328ad20
+## Local CTF Mode
 
+For local practice, enable mock challenge mode in Host Settings or through the API. Mock mode lets the platform create challenges locally and validate submitted flags without a real contest backend.
 
+The solver receives:
 
-## 架构核心
+```text
+/root/workspace/challenge.json
+/root/workspace/challenge.md
+/root/workspace/attachments/
+```
 
-项目整体采用 `Manager / Solver / Observer` 的多角色架构。
+For Pwn tasks, place binaries, source files, Dockerfiles, libc/ld files, and notes in the attachment directory. For Web tasks, include the target URL in the challenge entrypoint and add any source or archive files as attachments.
 
-### Manager
+## Local Pwn Smoke Test
 
-`Manager` 负责全局编排。
+This repository includes a small local ret2win challenge source under:
 
-它的职责不是亲自执行利用链，而是站在 challenge 视角做统一调度：
+```text
+local-ctf/simple-pwn/
+```
 
-- 管理题目推进节奏
-- 分配和回收 Solver
-- 汇总运行状态
-- 组织多 Agent 协作
+See [local-ctf/simple-pwn/README.md](local-ctf/simple-pwn/README.md) for the challenge notes.
 
-可以把它理解成整套系统的控制平面。
+The source is committed, but the compiled ELF is ignored. Build it with the solver image:
 
-### Solver
+```bash
+docker run --rm -v "%cd%/local-ctf/simple-pwn:/work" -w /work tch-agent:latest bash -lc "gcc -O0 -fno-stack-protector -no-pie -z noexecstack -o chall chall.c"
+```
 
-`Solver` 是真正执行任务的主体。
+On PowerShell from the repository root:
 
-它面向具体攻击路线推进实际动作，例如：
+```powershell
+docker run --rm -v "${PWD}\local-ctf\simple-pwn:/work" -w /work tch-agent:latest bash -lc "gcc -O0 -fno-stack-protector -no-pie -z noexecstack -o chall chall.c"
+```
 
-- 信息收集
-- 漏洞验证
-- 利用链推进
-- 结果提交
+Expected flag:
 
-一个题目可以同时存在多个 Solver，并行探索不同方向。
+```text
+flag{simple_ret2win_local_test}
+```
 
-### Observer
+## Runtime Image
 
-`Observer` 不直接代替 Solver 解题，而是作为旁路监督角色持续观察任务执行过程。
+The solver runtime builds a Docker image named:
 
-它重点解决的是复杂任务里最容易出现的几个问题：
+```text
+tch-agent:latest
+```
 
-- 执行路径逐渐偏移
-- 状态不断累积后变得混杂
-- 模型在阶段性停顿时过早结束任务
-- 上下文越来越重，影响后续推进
+The image contains common CTF Web/Pwn tooling, including:
 
-Observer 的作用，是让系统具备持续监督、轻量纠偏和状态维护能力。
+- pwntools
+- gdb
+- checksec
+- ROPgadget / ropper
+- ffuf
+- sqlmap
+- dirsearch
+- Chromium and headless browser tooling
+- Bun for running the solver RPC entrypoint inside Linux
 
-## 系统能力概览
+The Web process starts on the host, while each solver runs inside an isolated container.
 
-围绕上面的架构，项目重点构建了几类能力：
+## Development Commands
 
-### 1. 多 Agent 协作
+```bash
+bun run web
+bun run typecheck
+bun test
+```
 
-系统支持多个 Solver 并发探索不同方向，由 Manager 在全局视角统一调度，避免重复试错，并让有效结果能够继续沉淀和复用。
+Regenerate embedded built-in prompts, skills, and runtime assets after editing built-in resources:
 
-### 2. 运行态监督
+```bash
+bun scripts/generate-builtin-assets.ts
+```
 
-Observer 持续检查最近几轮执行轨迹和反馈，不替代 Solver 做决定，而是在发现明显低效或偏移时进行轻量纠偏。
+## Repository Layout
 
-### 3. 状态分层维护
+```text
+apps/
+  cli/        command entrypoint
+packages/
+  core/       config, challenge manager, runtime, solver session
+  ui-web/     Web UI and REST API
+  ui-tui/     terminal UI
+local-ctf/
+  simple-pwn/ local pwn smoke test source
+scripts/
+  generate-builtin-assets.ts
+```
 
-系统把“方向”和“事实”拆开维护：
+## Notes
 
-- `Idea` 关注当前值得继续推进的方向
-- `Memory` 保留可复用的事实、证据与约束
-
-这样可以避免状态混在一起，导致后续决策越来越模糊。
-
-### 4. 结束条件外置
-
-任务是否结束，不完全交给模型主观判断，而是由系统结合任务状态统一约束，避免复杂任务在中途被过早结束。
-
-### 5. 上下文压缩与降噪
-
-系统不会把原始工具输出和历史会话无限堆进上下文，而是通过改写、压缩、摘要等方式，尽量让后续决策始终建立在高信号、低噪音的信息之上。
+- This project is intended for CTF, lab, and authorized practice environments.
+- Local logs and generated challenge binaries are ignored.
+- API keys and user config live outside the repository under `~/.tch-agent/config/`.

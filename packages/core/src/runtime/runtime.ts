@@ -20,7 +20,6 @@ import type { Subprocess } from "bun"
 import {
     DOCKERFILE_HASH_LABEL,
     RUNTIME_IMAGE_ARCH,
-    ensureSolverBinary,
     getAgentEndError,
     getAssistantError,
     getStableSolverCreatedAt,
@@ -33,6 +32,8 @@ import {
 } from "./helpers"
 const SOLVER_NAME_PREFIX = "tch-solver"
 const DOCKER_PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"] as const
+const WINDOWS_DOCKER_DESKTOP_CONTEXT = "desktop-linux"
+const WINDOWS_DOCKER_DESKTOP_SOCKET = "//./pipe/dockerDesktopLinuxEngine"
 
 export { getAgentEndError, hashDockerfileContent } from "./helpers"
 
@@ -190,12 +191,45 @@ function readDockerBuildProxyArgs(): string[] {
     return args
 }
 
+function dockerCliEnv(): Record<string, string> | undefined {
+    if (process.platform !== "win32") return
+    if (process.env.DOCKER_CONTEXT?.trim() || process.env.DOCKER_HOST?.trim()) return
+
+    const env: Record<string, string> = {}
+    for (const [key, value] of Object.entries(process.env)) {
+        if (typeof value === "string") env[key] = value
+    }
+    env.DOCKER_CONTEXT = WINDOWS_DOCKER_DESKTOP_CONTEXT
+    return env
+}
+
+async function runDockerCli(args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    const proc = Bun.spawn(["docker", ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: dockerCliEnv(),
+    })
+    const stdout = new Response(proc.stdout).text()
+    const stderr = new Response(proc.stderr).text()
+    const exitCode = await proc.exited
+    return { exitCode, stdout: await stdout, stderr: await stderr }
+}
+
 function formatError(error: unknown): string {
     return error instanceof Error ? error.stack || error.message : String(error)
 }
 
 function solverStartupLogPath(solverId: string): string {
     return resolve(solverDir(solverId), "startup.log")
+}
+
+function createDockerClient(): Dockerode {
+    const explicitSocket = process.env.TCH_DOCKER_SOCKET?.trim()
+    if (explicitSocket) return new Dockerode({ socketPath: explicitSocket })
+
+    if (process.env.DOCKER_HOST?.trim()) return new Dockerode()
+    if (process.platform === "win32") return new Dockerode({ socketPath: WINDOWS_DOCKER_DESKTOP_SOCKET })
+    return new Dockerode()
 }
 
 export class RuntimeManager {
@@ -211,7 +245,7 @@ export class RuntimeManager {
     private eventHandlers: SolverEventHandler[] = []
 
     constructor(config: ConfigManager, hostBridgeHandlers: HostBridgeHandler[]) {
-        this.docker = new Dockerode()
+        this.docker = createDockerClient()
         this.config = {
             image: "tch-agent:latest",
             binds: [`${DEFAULT_CONFIG_DIR}:/root/.tch-agent/config:ro`],
@@ -233,11 +267,6 @@ export class RuntimeManager {
     async init(onProgress?: (message: string) => void) {
         await this.ensureReady()
         await this.ensureImage(onProgress)
-        const execName = basename(process.execPath).toLowerCase()
-        if (execName === "bun" || execName === "bun.exe") {
-            onProgress?.("Compiling runtime solver binary...")
-            await ensureSolverBinary()
-        }
     }
 
     onEvent(handler: SolverEventHandler) {
@@ -357,8 +386,8 @@ export class RuntimeManager {
     /** Check if Docker daemon is accessible */
     async ping(): Promise<boolean> {
         try {
-            await this.docker.ping()
-            return true
+            const result = await runDockerCli(["version", "--format", "{{.Server.Version}}"])
+            return result.exitCode === 0
         } catch {
             return false
         }
@@ -367,9 +396,8 @@ export class RuntimeManager {
     /** Check if the configured image exists locally */
     async hasImage(image?: string): Promise<boolean> {
         try {
-            const img = this.docker.getImage(image ?? this.config.image)
-            await img.inspect()
-            return true
+            const result = await runDockerCli(["image", "inspect", image ?? this.config.image])
+            return result.exitCode === 0
         } catch {
             return false
         }
@@ -392,9 +420,9 @@ export class RuntimeManager {
 
     private async getImageArchitecture(image?: string): Promise<string | undefined> {
         try {
-            const img = this.docker.getImage(image ?? this.config.image)
-            const inspect = await img.inspect()
-            return inspect.Architecture
+            const result = await runDockerCli(["image", "inspect", image ?? this.config.image, "--format", "{{.Architecture}}"])
+            if (result.exitCode !== 0) return
+            return result.stdout.trim() || undefined
         } catch {
             return
         }
@@ -410,7 +438,6 @@ export class RuntimeManager {
      * If the user copy doesn't exist, the built-in one is copied there first.
      */
     async ensureImage(onProgress?: (message: string) => void): Promise<void> {
-        const dockerfilePath = await resolveDockerfilePath(onProgress)
         const imageExists = await this.hasImage()
 
         if (imageExists) {
@@ -419,6 +446,7 @@ export class RuntimeManager {
             onProgress?.(`Image ${this.config.image} has wrong architecture (${actualArchitecture ?? "unknown"}); rebuilding...`)
         }
 
+        const dockerfilePath = await resolveDockerfilePath(onProgress)
         const expectedDockerfileHash = await this.getDockerfileHash(dockerfilePath)
         onProgress?.(`Building image ${this.config.image} from ${dockerfilePath}...`)
 
@@ -444,6 +472,7 @@ export class RuntimeManager {
             {
                 stdout: "pipe",
                 stderr: "pipe",
+                env: dockerCliEnv(),
             },
         )
 
@@ -539,6 +568,7 @@ export class RuntimeManager {
                 stdin: "pipe",
                 stdout: "pipe",
                 stderr: "pipe",
+                env: dockerCliEnv(),
             })
 
             this.procs.set(id, proc)
@@ -606,6 +636,7 @@ export class RuntimeManager {
             const stop = Bun.spawn(["docker", "stop", solver.containerId], {
                 stdout: "ignore",
                 stderr: "ignore",
+                env: dockerCliEnv(),
             })
             await stop.exited
         } catch {

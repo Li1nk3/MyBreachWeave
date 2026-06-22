@@ -1,20 +1,54 @@
 import { resolve, dirname } from "path"
-import { mkdir } from "fs/promises"
+import { mkdir, rm } from "fs/promises"
 import { existsSync, readdirSync, statSync } from "fs"
 import { loadSkillsFromDir } from "@mariozechner/pi-coding-agent"
 import type { Skill } from "@mariozechner/pi-coding-agent"
 import { BUILTIN_SKILL_FILES } from "../builtin-assets.generated"
 
+const RETIRED_BUILTIN_SKILL_DIRS = [
+    "ad-pentest",
+    "intranet-pentest",
+    "jwt-oauth-token-attacks",
+    "known-product-exploit",
+    "nuclei-skill",
+    "payloads-everything",
+    "pentest-fuzz-skill",
+    "recon",
+    "redis-webroot-rce",
+    "remote-cmd-execution",
+    "ssrf-server-side-request-forgery",
+    "targeted-pentest",
+]
+
+async function writeFileFromPath(destPath: string, sourcePath: string): Promise<void> {
+    await Bun.write(destPath, await Bun.file(sourcePath).arrayBuffer())
+}
+
 /** 将内置 skills 释放到用户 config 目录（仅首次 / 有更新时） */
 export async function initBuiltinSkills(dir: string) {
     const destBase = resolve(dir, "skills")
     await mkdir(destBase, { recursive: true })
+
+    for (const skillDir of RETIRED_BUILTIN_SKILL_DIRS) {
+        const destPath = resolve(destBase, skillDir)
+        if (existsSync(destPath)) await rm(destPath, { recursive: true, force: true }).catch(() => {})
+    }
+
     const builtinSkillFiles = BUILTIN_SKILL_FILES as unknown as Record<string, string>
+    const activeSkillDirs = new Set<string>()
+    for (const relativePath of Object.keys(builtinSkillFiles)) {
+        const [skillDir] = relativePath.split("/")
+        if (skillDir) activeSkillDirs.add(skillDir)
+    }
+
+    for (const skillDir of activeSkillDirs) {
+        await rm(resolve(destBase, skillDir), { recursive: true, force: true }).catch(() => {})
+    }
 
     for (const [relativePath, sourcePath] of Object.entries(builtinSkillFiles)) {
         const destPath = resolve(destBase, relativePath)
         await mkdir(dirname(destPath), { recursive: true })
-        await Bun.write(destPath, Bun.file(sourcePath))
+        await writeFileFromPath(destPath, sourcePath)
     }
 }
 
@@ -50,7 +84,7 @@ async function copyDir(src: string, dest: string, exclude: string[]) {
             await mkdir(destPath, { recursive: true })
             await copyDir(srcPath, destPath, exclude)
         } else {
-            await Bun.write(destPath, Bun.file(srcPath))
+            await writeFileFromPath(destPath, srcPath)
         }
     }
 }

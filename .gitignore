@@ -13,6 +13,8 @@ coverage
 # logs
 logs
 _.log
+*.log
+.codex-web*.log
 report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # dotenv environment variable files
@@ -31,7 +33,13 @@ bin
 
 # IntelliJ based IDEs
 .idea
+.claude/settings.local.json
 
 # Finder (MacOS) folder config
 .DS_Store
 .agent/
+
+# local CTF generated binaries
+local-ctf/**/chall
+local-ctf/**/chall.exe
+local-ctf/**/core

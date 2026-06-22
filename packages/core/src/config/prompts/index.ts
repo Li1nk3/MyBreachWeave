@@ -7,6 +7,8 @@ import { BUILTIN_PROMPTS } from "../builtin-assets.generated"
 
 export const CHALLENGE_PLANNER_PROMPT_NAME = "CHALLENGE_PLANNER"
 
+const RETIRED_BUILTIN_PROMPTS = ["kimi-security"]
+
 export interface PromptMeta {
     description?: string
     model?: string // model-pref 短 ID
@@ -72,6 +74,10 @@ function promptPath(configDir: string, name: string) {
     return resolve(promptsDir(configDir), `${name}.md`)
 }
 
+async function writeFileFromPath(destPath: string, sourcePath: string): Promise<void> {
+    await Bun.write(destPath, await Bun.file(sourcePath).arrayBuffer())
+}
+
 // ── Builtin release ──
 
 /** 已删除内置 prompt 的记录文件 */
@@ -106,8 +112,12 @@ export async function initBuiltinPrompts(configDir: string) {
         const name = basename(entry, ".md")
         if (deleted.has(name)) continue
         const dest = resolve(destDir, entry)
-        if (existsSync(dest)) continue
-        await Bun.write(dest, Bun.file(sourcePath))
+        await writeFileFromPath(dest, sourcePath)
+    }
+
+    for (const name of RETIRED_BUILTIN_PROMPTS) {
+        const dest = promptPath(configDir, name)
+        if (existsSync(dest)) await unlink(dest).catch(() => {})
     }
 }
 
@@ -182,7 +192,7 @@ export async function restoreBuiltinPrompt(configDir: string, name: string): Pro
     const dest = promptPath(configDir, name)
     const builtinPrompts = BUILTIN_PROMPTS as unknown as Record<string, string>
     const sourcePath = builtinPrompts[`${name}.md`]
-    await Bun.write(dest, Bun.file(sourcePath))
+    await writeFileFromPath(dest, sourcePath)
 }
 
 export async function listPrompts(configDir: string): Promise<PromptFile[]> {

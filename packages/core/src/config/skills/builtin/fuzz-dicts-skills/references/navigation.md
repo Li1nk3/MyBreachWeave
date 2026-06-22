@@ -24,13 +24,6 @@ Paths are relative to the repository root.
 | JSP upload bypass | `uploadFileExtDicts/jsp_upload_fuzz.txt` | `uploadFileExtDicts/tomcat_upload_fuzz.txt` | Useful for Java upload filters and Tomcat parsing behavior. |
 | ASP or IIS upload bypass | `uploadFileExtDicts/asp_upload_fuzz.txt` | `uploadFileExtDicts/iis_upload_fuzz.txt` | ASP-specific payloads plus IIS parsing variations. |
 | Linux or Windows upload target | `uploadFileExtDicts/linux_upload_fuzz.txt` or `uploadFileExtDicts/win_upload_fuzz.txt` | `uploadFileExtDicts/all_upload_fuzz.txt` | Choose by server OS when known. |
-| Username guessing | `userNameDict/top500.txt` | `userNameDict/常用用户名.txt` | Small login-first sets. |
-| Chinese user naming patterns | `userNameDict/中文姓名(简写、全拼).txt` | `userNameDict/top300_lastname.txt` | Useful for internal enterprise naming conventions. |
-| Password spraying | `passwordDict/top1000.txt` | `passwordDict/top19576.txt` | Start small for safety and signal, then expand. |
-| Strong-weak password style | `passwordDict/RW_Password/` | `passwordDict/某集团下发的弱口令字典.txt` | Better for real enterprise habits than trivial defaults. |
-| IoT or unknown device weak creds | `lotDict/password.txt` | `routerDicts/pass.txt` | Good for devices, routers, and odd panels. |
-| Router defaults | `routerDicts/pass.txt` | `passwordDict/路由器默认密码.txt` | Router-focused default credentials. |
-| Subdomain enumeration | `subdomainDicts/main.txt` | `subdomainDicts/dic1.txt` | `main.txt` is the broad working set. |
 | XSS payloads | `easyXssPayload/easyXssPayload.txt` | `easyXssPayload/burpXssPayload.txt` | The main file is broader. Burp payloads are smaller and easier to start with. |
 | SQL injection payloads | `sqlDict/sql.txt` | none | Compact SQLi fuzz payload list. |
 | SSRF or LFI style probes | `ssrfDicts/ssrf.txt` | `ssrfDicts/lfi-scanner.txt` | SSRF payloads first, then LFI-focused probes. |
@@ -61,21 +54,11 @@ Paths are relative to the repository root.
 - `uploadFileExtDicts/all_upload_fuzz.txt` has about 32991 lines and is the broad fallback.
 - `uploadFileExtDicts/php_upload_fuzz.txt`, `jsp_upload_fuzz.txt`, and `asp_upload_fuzz.txt` each provide stack-aware extension variations.
 - `uploadFileExtDicts/iis_upload_fuzz.txt`, `apache_upload_fuzz.txt`, and `tomcat_upload_fuzz.txt` target server parsing behavior.
-- `uploadFileExtDicts/fileExt` is a tiny extension seed file with `php`, `jsp`, `asp`, and `aspx` examples.
 
-## Credential Dictionaries
-
-- `userNameDict/` is for login names and naming conventions.
-- `passwordDict/top1000.txt` is safer as a first pass than the very large password lists.
-- `passwordDict/top19576.txt` is the large generic fallback.
-- `passwordDict/RW_Password/` is better when the user wants realistic strong-looking weak passwords.
-- `lotDict/password.txt` and `routerDicts/pass.txt` are niche but useful for device and router contexts.
-
-## Recon-Oriented Add-ons
+## CTF Web Add-ons
 
 - `apiDict/api.txt` has about 212 API-related entries.
 - `js/jsFileDict.txt` helps discover predictable JavaScript file names.
-- `subdomainDicts/main.txt` has about 167378 lines and is the main subdomain corpus.
 - `spring/spring-configuration-metadata.txt` helps when the target smells like Spring Boot or Actuator.
 
 ## Payload-Oriented Sets
@@ -92,6 +75,5 @@ Paths are relative to the repository root.
 
 - Unknown stack: start with a balanced general list.
 - Known stack: go stack-specific first.
-- Fast triage: prefer `vulns.txt`, `parameter.txt`, `top1000.txt`, `burpXssPayload.txt`.
-- Deep coverage: escalate to `Filenames_or_Directories_All.txt`, `AllParam.txt`, `all_upload_fuzz.txt`, `subdomainDicts/main.txt`.
-- Real devices or panels: check `lotDict/`, `routerDicts/`, and service or middleware password folders.
+- Fast triage: prefer `vulns.txt`, `parameter.txt`, `burpXssPayload.txt`, and `ctfDict/ctf.txt`.
+- Deep coverage: escalate to `Filenames_or_Directories_All.txt`, `AllParam.txt`, and `all_upload_fuzz.txt`.
