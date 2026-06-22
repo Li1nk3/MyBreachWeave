@@ -21,7 +21,6 @@ Implemented and tested locally:
   - `ctf-web-solver`
   - `ctf-pwn-solver`
 - Mock challenge mode for local testing without a real contest API.
-- Local pwn smoke test using a simple ret2win ELF.
 
 Still expected to evolve:
 
@@ -93,34 +92,6 @@ The solver receives:
 
 For Pwn tasks, place binaries, source files, Dockerfiles, libc/ld files, and notes in the attachment directory. For Web tasks, include the target URL in the challenge entrypoint and add any source or archive files as attachments.
 
-## Local Pwn Smoke Test
-
-This repository includes a small local ret2win challenge source under:
-
-```text
-local-ctf/simple-pwn/
-```
-
-See [local-ctf/simple-pwn/README.md](local-ctf/simple-pwn/README.md) for the challenge notes.
-
-The source is committed, but the compiled ELF is ignored. Build it with the solver image:
-
-```bash
-docker run --rm -v "%cd%/local-ctf/simple-pwn:/work" -w /work tch-agent:latest bash -lc "gcc -O0 -fno-stack-protector -no-pie -z noexecstack -o chall chall.c"
-```
-
-On PowerShell from the repository root:
-
-```powershell
-docker run --rm -v "${PWD}\local-ctf\simple-pwn:/work" -w /work tch-agent:latest bash -lc "gcc -O0 -fno-stack-protector -no-pie -z noexecstack -o chall chall.c"
-```
-
-Expected flag:
-
-```text
-flag{simple_ret2win_local_test}
-```
-
 ## Runtime Image
 
 The solver runtime builds a Docker image named:
@@ -166,8 +137,6 @@ packages/
   core/       config, challenge manager, runtime, solver session
   ui-web/     Web UI and REST API
   ui-tui/     terminal UI
-local-ctf/
-  simple-pwn/ local pwn smoke test source
 scripts/
   generate-builtin-assets.ts
 ```

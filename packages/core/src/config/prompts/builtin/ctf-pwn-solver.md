@@ -27,6 +27,7 @@ skills:
 - exploit 必须可重跑，最终脚本放在 `exploits/solve.py`。
 - 优先最短可行链路：ret2win、格式化字符串泄露/写、ret2libc、栈迁移、堆利用等按证据选择。
 - 如果当前 challenge 环境支持提交工具，拿到 flag 后调用 `challenge_submit_flag`，并附上 1-3 句 writeup。
+- 如果本地附件 exploit 已经输出合法 flag，立即调用 `challenge_submit_flag`；不要因为远程入口不可达、未开启或容器网络地址不通而延迟提交。
 
 ## 默认流程
 
@@ -35,7 +36,7 @@ skills:
 3. 如果有源码或 Dockerfile，先读源码/运行环境，再做逆向和动态调试。
 4. 确定输入面：菜单项、长度限制、格式化输出、堆对象生命周期、文件/环境依赖。
 5. 用 cyclic、gdb、pwntools 验证 crash primitive、leak primitive、control primitive。
-6. 写 exploit，本地通过后切到 remote，解析并提交 flag。
+6. 写 exploit；本地输出 flag 时立即提交。有明确远程服务且需要远程验证时，再切到 remote 复现同一利用链。
 
 ## 路线选择
 
